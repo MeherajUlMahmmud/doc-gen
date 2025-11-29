@@ -4,13 +4,13 @@ from rest_framework.serializers import ModelSerializer
 
 from document_control.constants import SignatoryErrorMessages
 from document_control.models import GeneratedDocumentModel, DocumentSignatoryModel
-from document_control.serializers.generated_document import GeneratedDocumentModelSerializer
 from user_control.models import UserModel
 from user_control.serializers.user import UserModelSerializer
 
 
 class DocumentSignatoryModelSerializerMeta(ModelSerializer):
     """Base meta class for DocumentSignatoryModel serializers"""
+    from document_control.serializers.generated_document import GeneratedDocumentModelSerializer
     signatory = UserModelSerializer(read_only=True)
     document = GeneratedDocumentModelSerializer.Lite(read_only=True)
 

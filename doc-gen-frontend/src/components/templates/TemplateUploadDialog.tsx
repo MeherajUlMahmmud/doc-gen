@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -11,9 +11,18 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Upload, FileText } from 'lucide-react';
+import { Upload, FileText, Loader2 } from 'lucide-react';
 import { documentService } from '@/services/documents';
 import { toast } from 'sonner';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import type { Template } from '@/types/document';
 
 interface TemplateUploadDialogProps {
   open: boolean;
@@ -30,6 +39,31 @@ export const TemplateUploadDialog: React.FC<TemplateUploadDialogProps> = ({
   const [description, setDescription] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [uploadType, setUploadType] = useState<'new' | 'version'>('new');
+  const [parentTemplateId, setParentTemplateId] = useState<string>('');
+  const [templates, setTemplates] = useState<Template[]>([]);
+  const [loadingTemplates, setLoadingTemplates] = useState(false);
+
+  // Load templates when upload type is 'version'
+  useEffect(() => {
+    const loadTemplates = async () => {
+      if (uploadType === 'version' && open) {
+        setLoadingTemplates(true);
+        try {
+          const result = await documentService.getTemplates({ is_active: true, page_size: 100 });
+          // Filter to show only parent templates (version 1 or those without parent)
+          const parentTemplates = result.data.filter(t => !t.parent || t.version === 1);
+          setTemplates(parentTemplates);
+        } catch (err) {
+          toast.error('Failed to load templates');
+        } finally {
+          setLoadingTemplates(false);
+        }
+      }
+    };
+
+    loadTemplates();
+  }, [uploadType, open]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
@@ -56,6 +90,11 @@ export const TemplateUploadDialog: React.FC<TemplateUploadDialogProps> = ({
       return;
     }
 
+    if (uploadType === 'version' && !parentTemplateId) {
+      toast.error('Please select a parent template');
+      return;
+    }
+
     try {
       setUploading(true);
 
@@ -63,10 +102,18 @@ export const TemplateUploadDialog: React.FC<TemplateUploadDialogProps> = ({
       formData.append('title', title.trim());
       formData.append('description', description.trim());
       formData.append('file', file);
+      formData.append('upload_type', uploadType);
+
+      if (uploadType === 'version' && parentTemplateId) {
+        formData.append('parent_template_id', parentTemplateId);
+      }
 
       await documentService.uploadTemplate(formData);
 
-      toast.success('Template uploaded successfully');
+      const successMessage = uploadType === 'version'
+        ? 'New version uploaded successfully'
+        : 'Template uploaded successfully';
+      toast.success(successMessage);
       onOpenChange(false);
       resetForm();
       onSuccess?.();
@@ -82,6 +129,9 @@ export const TemplateUploadDialog: React.FC<TemplateUploadDialogProps> = ({
     setTitle('');
     setDescription('');
     setFile(null);
+    setUploadType('new');
+    setParentTemplateId('');
+    setTemplates([]);
   };
 
   const handleClose = () => {
@@ -97,12 +147,69 @@ export const TemplateUploadDialog: React.FC<TemplateUploadDialogProps> = ({
         <DialogHeader>
           <DialogTitle>Upload Template</DialogTitle>
           <DialogDescription>
-            Upload a new document template (.docx file). If a template with the same title exists, this will create a new version.
+            Upload a new document template or create a new version of an existing template (.docx file).
           </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit}>
           <div className="grid gap-4 py-4">
+            <div className="grid gap-3">
+              <Label>Upload Type <span className="text-red-500">*</span></Label>
+              <RadioGroup
+                value={uploadType}
+                onValueChange={(value: 'new' | 'version') => {
+                  setUploadType(value);
+                  setParentTemplateId('');
+                }}
+                disabled={uploading}
+                className="flex gap-4"
+              >
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="new" id="new" />
+                  <Label htmlFor="new" className="font-normal cursor-pointer">
+                    New Template
+                  </Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="version" id="version" />
+                  <Label htmlFor="version" className="font-normal cursor-pointer">
+                    New Version
+                  </Label>
+                </div>
+              </RadioGroup>
+            </div>
+
+            {uploadType === 'version' && (
+              <div className="grid gap-2">
+                <Label htmlFor="parentTemplate">
+                  Select Template <span className="text-red-500">*</span>
+                </Label>
+                <Select
+                  value={parentTemplateId}
+                  onValueChange={setParentTemplateId}
+                  disabled={uploading || loadingTemplates}
+                  required={uploadType === 'version'}
+                >
+                  <SelectTrigger id="parentTemplate">
+                    <SelectValue placeholder={loadingTemplates ? "Loading templates..." : "Select a template"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {templates.map((template) => (
+                      <SelectItem key={template.id} value={template.id}>
+                        {template.title} (v{template.version})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {loadingTemplates && (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    <span>Loading templates...</span>
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="grid gap-2">
               <Label htmlFor="title">
                 Template Title <span className="text-red-500">*</span>

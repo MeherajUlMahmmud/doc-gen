@@ -22,12 +22,31 @@ export const userService = {
     },
 
     /**
-     * Update user profile (designation and division)
+     * Update user profile (name, designation and division)
      */
     async updateProfile(data: ProfileUpdateRequest): Promise<User> {
         const response = await api.patch<ApiResponse<User>>(
             API_ENDPOINTS.USERS.PROFILE_UPDATE,
             data
+        );
+        return handleApiResponse(response.data);
+    },
+
+    /**
+     * Upload profile picture
+     */
+    async uploadProfilePicture(file: File): Promise<User> {
+        const formData = new FormData();
+        formData.append('profile_picture', file);
+
+        const response = await api.patch<ApiResponse<User>>(
+            API_ENDPOINTS.USERS.PROFILE_UPDATE,
+            formData,
+            {
+                headers: {
+                    'Content-Type': 'multipart/form-data',
+                },
+            }
         );
         return handleApiResponse(response.data);
     },

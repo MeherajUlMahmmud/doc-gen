@@ -19,7 +19,7 @@ from common.api_response import ApiResponse
 from common.custom_view import CustomCreateAPIView, CustomRetrieveAPIView, CustomUpdateAPIView
 from user_control.models import UserModel, LoginAttemptModel
 from user_control.serializers.user import (
-    UserSerializer,
+    UserModelSerializer,
     UserRegistrationSerializer,
     UserProfileUpdateSerializer,
     SignatureUploadSerializer,
@@ -67,7 +67,7 @@ class RegisterAPIView(CustomCreateAPIView):
 
             return ApiResponse.created(
                 message='User registration successful',
-                data=UserSerializer(user).data
+                data=UserModelSerializer(user).data
             )
         except Exception as e:
             logger.error(f'[RegisterAPIView] Unexpected error during user registration: {str(e)}')
@@ -154,7 +154,7 @@ class LoginAPIView(GenericAPIView):
             return ApiResponse.success(
                 message='Login successful',
                 data={
-                    'user': UserSerializer(user).data,
+                    'user': UserModelSerializer(user).data,
                     'tokens': {
                         'access': access_token,
                         'refresh': refresh_token,
@@ -243,7 +243,7 @@ class LogoutAPIView(GenericAPIView):
 class ProfileRetrieveAPIView(CustomRetrieveAPIView):
     """Retrieve user profile"""
     permission_classes = [IsAuthenticated]
-    serializer_class = UserSerializer
+    serializer_class = UserModelSerializer
     queryset = UserModel.objects.filter(is_active=True, is_deleted=False)
 
     def get_object(self):
@@ -285,7 +285,7 @@ class ProfileUpdateAPIView(CustomUpdateAPIView):
 
             return ApiResponse.success(
                 message='Profile updated successfully',
-                data=UserSerializer(instance).data
+                data=UserModelSerializer(instance).data
             )
         except Exception as e:
             logger.error(f'[ProfileUpdateAPIView] Error updating profile for user {request.user.email}: {str(e)}')

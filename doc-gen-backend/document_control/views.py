@@ -46,7 +46,7 @@ class ApproveDocumentAPIView(CustomCreateAPIView):
     Approve and sign a document - handles individual signatory signing
     Expects: { "pin": "1234", "totp_code": "123456" (optional) }
     """
-    serializer_class = DocumentModelSerializer
+    serializer_class = GeneratedDocumentModelSerializer.Approve
     lookup_field = 'pk'
     lookup_url_kwarg = 'pk'
 
@@ -72,15 +72,18 @@ class ApproveDocumentAPIView(CustomCreateAPIView):
                 'message': 'You are not a pending signatory for this document'
             }, status=status.HTTP_403_FORBIDDEN)
 
-        # Get PIN and optional TOTP code from request
-        pin = request.data.get('pin')
-        totp_code = request.data.get('totp_code')
-
-        if not pin:
+        # Validate input using serializer
+        serializer = self.get_serializer(data=request.data)
+        if not serializer.is_valid():
             return Response({
                 'status': 'error',
-                'message': 'PIN is required'
+                'message': 'Validation failed',
+                'errors': serializer.errors
             }, status=status.HTTP_400_BAD_REQUEST)
+
+        validated_data = serializer.validated_data
+        pin = validated_data.get('pin')
+        totp_code = validated_data.get('totp_code')
 
         # Verify PIN
         if not request.user.check_pin(pin):
@@ -89,14 +92,8 @@ class ApproveDocumentAPIView(CustomCreateAPIView):
                 'message': 'Invalid PIN'
             }, status=status.HTTP_400_BAD_REQUEST)
 
-        # Verify 2FA if enabled
-        if request.user.two_factor_enabled:
-            if not totp_code:
-                return Response({
-                    'status': 'error',
-                    'message': '2FA code is required'
-                }, status=status.HTTP_400_BAD_REQUEST)
-
+        # Verify 2FA if enabled and code provided
+        if request.user.two_factor_enabled and totp_code:
             if not request.user.verify_totp(totp_code):
                 return Response({
                     'status': 'error',
@@ -130,13 +127,17 @@ class ApproveDocumentAPIView(CustomCreateAPIView):
                 document.save()
                 logger.info(f"Document {document.id} fully approved - all signatories have signed")
 
-            # Serialize the updated document
-            serializer = self.get_serializer(document)
+            # Serialize the updated document for output
+            # Use Detail serializer for full document information
+            output_serializer = GeneratedDocumentModelSerializer.Detail(
+                document,
+                context={'request': request}
+            )
 
             return Response({
                 'status': 'success',
                 'message': 'Document signed successfully',
-                'data': serializer.data
+                'data': output_serializer.data
             }, status=status.HTTP_200_OK)
 
         except Exception as e:
@@ -211,10 +212,35 @@ class TemplateDetailAPIView(CustomRetrieveAPIView):
     def retrieve(self, request, *args, **kwargs):
         instance = self.get_object()
         serializer = self.get_serializer(instance)
+        data = serializer.data.copy()
+        
+        # Parse template file to extract fields
+        try:
+            from .services import TemplateParser
+            import os
+            from django.conf import settings
+            
+            template_path = instance.file.path
+            if os.path.exists(template_path):
+                parser = TemplateParser(template_path)
+                parsed_data = parser.parse()
+                
+                # Add fields and signature groups to response
+                data['fields'] = parsed_data.get('fields', [])
+                data['signature_groups'] = parsed_data.get('signature_groups', [])
+                
+                # Mark required fields
+                for field in data['fields']:
+                    field['required'] = 'required' in field.get('validation', '').lower()
+        except Exception as e:
+            logger.warning(f"Failed to parse template fields for template {instance.id}: {str(e)}")
+            data['fields'] = []
+            data['signature_groups'] = []
+        
         return Response({
             'status': 'success',
             'message': 'Template retrieved successfully',
-            'data': serializer.data
+            'data': data
         }, status=status.HTTP_200_OK)
 
 
@@ -249,6 +275,8 @@ class TemplateUploadAPIView(CustomCreateAPIView):
     - title: Template title
     - description: Template description (optional)
     - file: Template file (.docx)
+    - upload_type: 'new' or 'version'
+    - parent_template_id: Parent template ID (required when upload_type is 'version')
     """
     serializer_class = TemplateModelSerializer.Create
 
@@ -260,48 +288,36 @@ class TemplateUploadAPIView(CustomCreateAPIView):
                 'message': 'Only administrators can upload templates'
             }, status=status.HTTP_403_FORBIDDEN)
 
-        # Get data from request
-        title = request.data.get('title', '').strip()
-        description = request.data.get('description', '').strip()
-        file = request.FILES.get('file')
-
-        # Validate required fields
-        if not title:
+        # Validate using serializer
+        serializer = self.get_serializer(data=request.data)
+        if not serializer.is_valid():
             return Response({
                 'status': 'error',
-                'message': 'Template title is required'
-            }, status=status.HTTP_400_BAD_REQUEST)
-
-        if not file:
-            return Response({
-                'status': 'error',
-                'message': 'Template file is required'
-            }, status=status.HTTP_400_BAD_REQUEST)
-
-        # Validate file extension
-        if not file.name.endswith('.docx'):
-            return Response({
-                'status': 'error',
-                'message': 'Only .docx files are supported'
+                'message': 'Validation failed',
+                'errors': serializer.errors
             }, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            # Check if this is a new version of an existing template
-            existing_template = TemplateModel.objects.filter(
-                title=title,
-                parent__isnull=True
-            ).first()
+            validated_data = serializer.validated_data
+            upload_type = validated_data.get('upload_type')
+            parent_template_id = validated_data.get('parent_template_id')
+            title = validated_data.get('title')
+            description = validated_data.get('description', '')
+            file = validated_data.get('file')
 
-            if existing_template:
-                # Create a new version
-                latest_version = existing_template.get_latest_version()
+            if upload_type == 'version':
+                # Create a new version of existing template
+                parent_template = TemplateModel.objects.get(id=parent_template_id)
+                latest_version = parent_template.get_latest_version()
+
                 template = TemplateModel.objects.create(
                     title=title,
                     description=description,
                     file=file,
-                    parent=existing_template,
+                    parent=parent_template,
                     version=latest_version.version + 1
                 )
+                message = f'New version (v{template.version}) uploaded successfully'
             else:
                 # Create a new template
                 template = TemplateModel.objects.create(
@@ -311,16 +327,23 @@ class TemplateUploadAPIView(CustomCreateAPIView):
                     version=1,
                     parent=None
                 )
+                message = 'New template uploaded successfully'
 
-            serializer = self.get_serializer(template)
+            output_serializer = TemplateModelSerializer.Detail(template)
 
             return Response({
                 'status': 'success',
-                'message': 'Template uploaded successfully',
-                'data': serializer.data
+                'message': message,
+                'data': output_serializer.data
             }, status=status.HTTP_201_CREATED)
 
+        except TemplateModel.DoesNotExist:
+            return Response({
+                'status': 'error',
+                'message': 'Parent template not found'
+            }, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
+            logger.error(f"Error uploading template: {str(e)}")
             return Response({
                 'status': 'error',
                 'message': f'Failed to upload template: {str(e)}'

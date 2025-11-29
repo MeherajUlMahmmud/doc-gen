@@ -9,6 +9,33 @@ export enum DocumentStatus {
 }
 
 /**
+ * Template field definition from parser
+ */
+export interface TemplateField {
+    name: string;
+    type: 'text' | 'number' | 'checkbox' | 'signature';
+    label: string;
+    validation: string;
+    options: string[];
+    min_value: number | null;
+    max_value: number | null;
+    is_autofilled: boolean;
+    required?: boolean;
+}
+
+/**
+ * Signature group definition
+ */
+export interface SignatureGroup {
+    prefix: string;
+    base_field_name: string;
+    name_field: string | null;
+    section_label: string;
+    signature_fields: TemplateField[];
+    is_required: boolean;
+}
+
+/**
  * Template model
  */
 export interface Template {
@@ -21,6 +48,16 @@ export interface Template {
     created_by: string;
     created_at: string;
     updated_at: string;
+    fields?: TemplateField[];
+    signature_groups?: SignatureGroup[];
+}
+
+/**
+ * Document form data for state management
+ */
+export interface DocumentFormData {
+    title: string;
+    fields: Record<string, any>;
 }
 
 /**

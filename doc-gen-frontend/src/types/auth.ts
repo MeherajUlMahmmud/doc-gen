@@ -68,6 +68,8 @@ export interface LogoutRequest {
  * Profile update request payload
  */
 export interface ProfileUpdateRequest {
+    first_name?: string;
+    last_name?: string;
     designation?: string;
     division?: string;
 }

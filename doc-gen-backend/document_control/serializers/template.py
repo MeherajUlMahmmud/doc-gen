@@ -96,12 +96,28 @@ class TemplateModelSerializer:
                 'required': TemplateErrorMessages.FILE_REQUIRED,
             }
         )
+        upload_type = CharField(
+            write_only=True,
+            required=True,
+            help_text="Upload type: 'new' or 'version'",
+            error_messages={
+                'required': 'Upload type is required',
+            }
+        )
+        parent_template_id = CharField(
+            write_only=True,
+            required=False,
+            allow_null=True,
+            help_text="Parent template ID (required when upload_type is 'version')",
+        )
 
         class Meta(TemplateModelSerializerMeta.Meta):
             fields = [
                 'title',
                 'description',
                 'file',
+                'upload_type',
+                'parent_template_id',
             ]
 
         def validate_title(self, value):
@@ -126,6 +142,45 @@ class TemplateModelSerializer:
                 raise serializers.ValidationError(TemplateErrorMessages.FILE_SIZE_EXCEEDED)
 
             return value
+
+        def validate_upload_type(self, value):
+            """Validate upload type"""
+            if value not in ['new', 'version']:
+                raise serializers.ValidationError("Upload type must be either 'new' or 'version'")
+            return value
+
+        def validate(self, attrs):
+            """Cross-field validation"""
+            upload_type = attrs.get('upload_type')
+            parent_template_id = attrs.get('parent_template_id')
+
+            # If upload_type is 'version', parent_template_id is required
+            if upload_type == 'version' and not parent_template_id:
+                raise serializers.ValidationError({
+                    'parent_template_id': 'Parent template is required when uploading a new version'
+                })
+
+            # If upload_type is 'new', parent_template_id should not be provided
+            if upload_type == 'new' and parent_template_id:
+                raise serializers.ValidationError({
+                    'parent_template_id': 'Parent template should not be provided when uploading a new template'
+                })
+
+            # Validate that parent template exists if provided
+            if parent_template_id:
+                try:
+                    parent = TemplateModel.objects.get(id=parent_template_id, is_active=True)
+                    # Ensure parent is not itself a child
+                    if parent.parent is not None:
+                        raise serializers.ValidationError({
+                            'parent_template_id': 'You must select the original template, not a version'
+                        })
+                except TemplateModel.DoesNotExist:
+                    raise serializers.ValidationError({
+                        'parent_template_id': 'Parent template not found or is inactive'
+                    })
+
+            return attrs
 
     class Update(TemplateModelSerializerMeta):
         """Serializer for updating templates"""

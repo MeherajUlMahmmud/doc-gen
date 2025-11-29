@@ -101,7 +101,14 @@ export const documentService = {
      * Create a new document
      */
     async createDocument(data: CreateDocumentRequest): Promise<Document> {
-        const response = await api.post<ApiResponse<Document>>(API_ENDPOINTS.DOCUMENTS.CREATE, data);
+        // Backend expects: name, template (ID), input_data (fields as JSON)
+        const payload = {
+            name: data.title,
+            template: data.template_id,
+            input_data: data.fields,
+            export_format: 'docx', // Default format
+        };
+        const response = await api.post<ApiResponse<Document>>(API_ENDPOINTS.DOCUMENTS.CREATE, payload);
         return handleApiResponse(response.data);
     },
 

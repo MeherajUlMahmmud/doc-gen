@@ -4,7 +4,6 @@ from rest_framework.serializers import ModelSerializer
 
 from document_control.constants import DocumentErrorMessages
 from document_control.models import GeneratedDocumentModel, TemplateModel
-from document_control.serializers.document_signatory import DocumentSignatoryModelSerializer
 from document_control.serializers.template import TemplateModelSerializer
 from user_control.serializers.user import UserModelSerializer
 
@@ -42,6 +41,8 @@ class GeneratedDocumentModelSerializerMeta(ModelSerializer):
     def get_signatories(self, obj):
         """Get signatories for the document"""
         signatories = obj.signatories.all()
+        
+        from document_control.serializers.document_signatory import DocumentSignatoryModelSerializer
         # Use the List serializer class defined later in the file
         return DocumentSignatoryModelSerializer.List(signatories, many=True, context=self.context).data
 
@@ -274,3 +275,56 @@ class GeneratedDocumentModelSerializer:
             if value not in valid_statuses:
                 raise serializers.ValidationError(DocumentErrorMessages.STATUS_INVALID)
             return value
+
+    class Approve(GeneratedDocumentModelSerializerMeta):
+        """Serializer for approving/signing documents"""
+        pin = CharField(
+            write_only=True,
+            required=True,
+            min_length=4,
+            max_length=20,
+            help_text="PIN to verify signature authorization",
+            error_messages={
+                'required': 'PIN is required',
+                'min_length': 'PIN must be at least 4 characters',
+                'max_length': 'PIN must be at most 20 characters',
+            }
+        )
+        totp_code = CharField(
+            write_only=True,
+            required=False,
+            min_length=6,
+            max_length=6,
+            help_text="TOTP code for 2FA verification (required if 2FA is enabled)",
+            error_messages={
+                'min_length': 'TOTP code must be 6 digits',
+                'max_length': 'TOTP code must be 6 digits',
+            }
+        )
+
+        class Meta(GeneratedDocumentModelSerializerMeta.Meta):
+            fields = GeneratedDocumentModelSerializerMeta.Meta.fields
+
+        def validate_pin(self, value):
+            """Validate PIN format"""
+            if not value or len(value.strip()) < 4:
+                raise serializers.ValidationError('PIN must be at least 4 characters')
+            return value.strip()
+
+        def validate_totp_code(self, value):
+            """Validate TOTP code format"""
+            if value and (len(value) != 6 or not value.isdigit()):
+                raise serializers.ValidationError('TOTP code must be 6 digits')
+            return value
+
+        def validate(self, data):
+            """Cross-field validation"""
+            user = self.context['request'].user
+            
+            # Check if 2FA is enabled and totp_code is provided
+            if user.two_factor_enabled and not data.get('totp_code'):
+                raise serializers.ValidationError({
+                    'totp_code': '2FA code is required when 2FA is enabled'
+                })
+            
+            return data
