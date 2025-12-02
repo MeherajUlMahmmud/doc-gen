@@ -8,6 +8,7 @@ import type {
     ApproveDocumentRequest,
     TemplateFilters,
     DocumentFilters,
+    User,
 } from '@/types/document';
 import { API_ENDPOINTS } from '@/constants/urls';
 
@@ -64,6 +65,27 @@ export const documentService = {
                     'Content-Type': 'multipart/form-data',
                 },
             }
+        );
+        return handleApiResponse(response.data);
+    },
+
+    /**
+     * Download template file
+     */
+    async downloadTemplate(id: string): Promise<Blob> {
+        const response = await api.get(API_ENDPOINTS.TEMPLATES.DOWNLOAD(id), {
+            responseType: 'blob',
+        });
+        return response.data;
+    },
+
+    /**
+     * Preview template with filled data
+     */
+    async previewTemplate(id: string, fields: Record<string, any>): Promise<{ html: string; fields: Record<string, any> }> {
+        const response = await api.post<ApiResponse<{ html: string; fields: Record<string, any> }>>(
+            API_ENDPOINTS.TEMPLATES.PREVIEW(id),
+            { fields }
         );
         return handleApiResponse(response.data);
     },
@@ -185,6 +207,22 @@ export const documentService = {
     async restoreDraft(draftId: string): Promise<Record<string, any>> {
         const response = await api.post<ApiResponse<Record<string, any>>>(
             API_ENDPOINTS.DRAFTS.RESTORE(draftId)
+        );
+        return handleApiResponse(response.data);
+    },
+
+    /**
+     * Get all users for signatory selection
+     */
+    async getUsers(filters?: { search?: string; division?: string; designation?: string }): Promise<User[]> {
+        const params = new URLSearchParams();
+
+        if (filters?.search) params.append('search', filters.search);
+        if (filters?.division) params.append('division', filters.division);
+        if (filters?.designation) params.append('designation', filters.designation);
+
+        const response = await api.get<ApiResponse<User[]>>(
+            `${API_ENDPOINTS.USERS.LIST}?${params.toString()}`
         );
         return handleApiResponse(response.data);
     },

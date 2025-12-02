@@ -6,23 +6,59 @@ import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { FileSignature } from 'lucide-react';
+import { UserPicker } from './UserPicker';
 import type { TemplateField } from '@/types/document';
 
 interface DynamicFormFieldProps {
     field: TemplateField;
     control: Control<any>;
     onChange?: (value: any) => void;
+    enableSignatorySelection?: boolean;
 }
 
 export const DynamicFormField: React.FC<DynamicFormFieldProps> = ({
     field,
     control,
     onChange,
+    enableSignatorySelection = false,
 }) => {
     const isRequired = field.required || field.validation.toLowerCase().includes('required');
 
-    // Handle signature fields (read-only)
+    // Handle signature fields with signatory selection
     if (field.type === 'signature') {
+        if (enableSignatorySelection) {
+            return (
+                <FormField
+                    control={control}
+                    name={field.name}
+                    render={({ field: formField }) => (
+                        <FormItem>
+                            <FormLabel className="flex items-center gap-2">
+                                {field.label}
+                                {isRequired && <span className="text-destructive">*</span>}
+                            </FormLabel>
+                            <FormControl>
+                                <UserPicker
+                                    value={formField.value || []}
+                                    onChange={(userIds) => {
+                                        formField.onChange(userIds);
+                                        onChange?.(userIds);
+                                    }}
+                                    multiple={false}
+                                    placeholder="Select signatory..."
+                                />
+                            </FormControl>
+                            <FormDescription>
+                                Select a user to sign this field.
+                            </FormDescription>
+                            <FormMessage />
+                        </FormItem>
+                    )}
+                />
+            );
+        }
+
+        // Read-only signature field (for document viewing)
         return (
             <FormField
                 control={control}

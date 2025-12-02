@@ -6,12 +6,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { ErrorAlert } from '@/components/common/ErrorAlert';
-import { ArrowLeft, FileText, Calendar, Clock, CheckCircle2, XCircle, Download, Plus, History } from 'lucide-react';
+import { ArrowLeft, FileText, Calendar, Clock, CheckCircle2, XCircle, Download, Plus, History, Upload } from 'lucide-react';
 import { documentService } from '@/services/documents';
 import type { Template } from '@/types/document';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { ROUTES } from '@/constants/urls';
+import { TemplateUploadDialog } from '@/components/templates/TemplateUploadDialog';
 
 export const TemplateDetailPage: React.FC = () => {
     const { id } = useParams<{ id: string }>();
@@ -21,6 +22,7 @@ export const TemplateDetailPage: React.FC = () => {
     const [loading, setLoading] = useState(true);
     const [loadingVersions, setLoadingVersions] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
 
     useEffect(() => {
         if (id) {
@@ -68,6 +70,39 @@ export const TemplateDetailPage: React.FC = () => {
         navigate(ROUTES.TEMPLATES);
     };
 
+    const handleDownload = async () => {
+        if (!template) return;
+
+        try {
+            toast.loading('Downloading template...');
+            const blob = await documentService.downloadTemplate(template.id);
+
+            // Create a download link and trigger it
+            const url = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `${template.title}.docx`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            window.URL.revokeObjectURL(url);
+
+            toast.dismiss();
+            toast.success('Template downloaded successfully');
+        } catch (err) {
+            toast.dismiss();
+            const errorMessage = err instanceof Error ? err.message : 'Failed to download template';
+            toast.error(errorMessage);
+        }
+    };
+
+    const handleUploadSuccess = () => {
+        // Reload template and versions after successful upload
+        if (id) {
+            loadTemplate(id);
+        }
+    };
+
     if (loading) {
         return (
             <AppLayout>
@@ -106,7 +141,11 @@ export const TemplateDetailPage: React.FC = () => {
                             <Plus className="mr-2 h-4 w-4" />
                             Create Document
                         </Button>
-                        <Button variant="outline">
+                        <Button variant="outline" onClick={() => setUploadDialogOpen(true)}>
+                            <Upload className="mr-2 h-4 w-4" />
+                            Upload New Version
+                        </Button>
+                        <Button variant="outline" onClick={handleDownload}>
                             <Download className="mr-2 h-4 w-4" />
                             Download Template File
                         </Button>
@@ -299,6 +338,13 @@ export const TemplateDetailPage: React.FC = () => {
                     </CardContent>
                 </Card>
             </div>
+
+            {/* Upload New Version Dialog */}
+            <TemplateUploadDialog
+                open={uploadDialogOpen}
+                onOpenChange={setUploadDialogOpen}
+                onSuccess={handleUploadSuccess}
+            />
         </AppLayout>
     );
 };

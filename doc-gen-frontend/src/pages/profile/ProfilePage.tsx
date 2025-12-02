@@ -7,8 +7,8 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { User, Shield, FileSignature } from 'lucide-react';
-import { SignatureSetup } from './SignatureSetup';
-import { GeneralTab } from './GeneralTab';
+import { SignatureSetup } from './SignatureSetupPage';
+import { GeneralTab } from './GeneralTabPage';
 
 export const ProfilePage: React.FC = () => {
     const { user } = useAuth();

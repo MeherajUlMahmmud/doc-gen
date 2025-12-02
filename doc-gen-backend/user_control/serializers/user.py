@@ -7,12 +7,13 @@ from user_control.models import UserModel
 logger = logging.getLogger(__name__)
 
 
-class UserModelSerializer(serializers.ModelSerializer):
-    """Serializer for user data"""
+class UserModelSerializerMeta(serializers.ModelSerializer):
+    """Base meta class for UserModelSerializer"""
     full_name = serializers.SerializerMethodField()
 
     class Meta:
         model = UserModel
+        ref_name = 'UserModelSerializer'
         fields = [
             'id',
             'email',
@@ -44,6 +45,26 @@ class UserModelSerializer(serializers.ModelSerializer):
 
     def get_full_name(self, obj):
         return obj.get_full_name()
+
+
+class UserModelSerializer(UserModelSerializerMeta):
+    """Full serializer for user data"""
+    pass
+
+
+UserModelSerializer.Lite = type('Lite', (UserModelSerializerMeta,), {
+    'Meta': type('Meta', (UserModelSerializerMeta.Meta,), {
+        'fields': [
+            'id',
+            'email',
+            'first_name',
+            'last_name',
+            'full_name',
+            'designation',
+            'division',
+        ]
+    })
+})
 
 
 class UserRegistrationSerializer(serializers.ModelSerializer):

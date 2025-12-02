@@ -7,15 +7,15 @@ import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { ROUTES } from '@/constants/urls';
 
 // Lazy load pages
-const LoginPage = lazy(() => import('@/pages/auth/Login').then(module => ({ default: module.LoginPage })));
-const RegisterPage = lazy(() => import('@/pages/auth/Register').then(module => ({ default: module.RegisterPage })));
-const Dashboard = lazy(() => import('@/pages/Dashboard').then(module => ({ default: module.Dashboard })));
-const ProfilePage = lazy(() => import('@/pages/profile/Profile').then(module => ({ default: module.ProfilePage })));
-const TemplateListPage = lazy(() => import('@/pages/templates/TemplateList').then(module => ({ default: module.TemplateListPage })));
-const TemplateDetailPage = lazy(() => import('@/pages/templates/TemplateDetail').then(module => ({ default: module.TemplateDetailPage })));
-const DocumentListPage = lazy(() => import('@/pages/documents/DocumentList').then(module => ({ default: module.DocumentListPage })));
-const NewDocumentPage = lazy(() => import('@/pages/documents/NewDocument').then(module => ({ default: module.NewDocumentPage })));
-const PendingSignaturesPage = lazy(() => import('@/pages/documents/PendingSignatures').then(module => ({ default: module.PendingSignaturesPage })));
+const LoginPage = lazy(() => import('@/pages/auth/LoginPage').then(module => ({ default: module.LoginPage })));
+const RegisterPage = lazy(() => import('@/pages/auth/RegisterPage').then(module => ({ default: module.RegisterPage })));
+const DashboardPage = lazy(() => import('@/pages/DashboardPage').then(module => ({ default: module.DashboardPage })));
+const ProfilePage = lazy(() => import('@/pages/profile/ProfilePage').then(module => ({ default: module.ProfilePage })));
+const TemplateListPage = lazy(() => import('@/pages/templates/TemplateListPage').then(module => ({ default: module.TemplateListPage })));
+const TemplateDetailPage = lazy(() => import('@/pages/templates/TemplateDetailPage').then(module => ({ default: module.TemplateDetailPage })));
+const DocumentListPage = lazy(() => import('@/pages/documents/DocumentListPage').then(module => ({ default: module.DocumentListPage })));
+const NewDocumentPage = lazy(() => import('@/pages/documents/NewDocumentPage').then(module => ({ default: module.NewDocumentPage })));
+const PendingSignaturesPage = lazy(() => import('@/pages/documents/PendingSignaturesPage').then(module => ({ default: module.PendingSignaturesPage })));
 
 // Loading fallback component
 const PageLoader = () => (
@@ -39,7 +39,7 @@ function App() {
                         path={ROUTES.HOME}
                         element={
                             <ProtectedRoute>
-                                <Dashboard />
+                                <DashboardPage />
                             </ProtectedRoute>
                         }
                     />

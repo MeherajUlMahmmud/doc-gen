@@ -16,6 +16,7 @@ export const API_ENDPOINTS = {
     },
     // User endpoints
     USERS: {
+        LIST: '/api/v1/users/',
         PROFILE: '/api/v1/users/profile/',
         PROFILE_UPDATE: '/api/v1/users/profile/update/',
         SIGNATURE_UPLOAD: '/api/v1/users/signature/upload/',
@@ -28,12 +29,14 @@ export const API_ENDPOINTS = {
         DETAIL: (id: string) => `/api/v1/templates/${id}/`,
         VERSIONS: (id: string) => `/api/v1/templates/${id}/versions/`,
         UPLOAD: '/api/v1/templates/upload/',
+        DOWNLOAD: (id: string) => `/api/v1/templates/${id}/download/`,
+        PREVIEW: (id: string) => `/api/v1/templates/${id}/preview/`,
     },
     // Document endpoints
     DOCUMENTS: {
         LIST: '/api/v1/documents/',
         DETAIL: (id: string) => `/api/v1/documents/${id}/`,
-        CREATE: '/api/v1/documents/',
+        CREATE: '/api/v1/documents/create/',
         UPDATE: (id: string) => `/api/v1/documents/${id}/`,
         DELETE: (id: string) => `/api/v1/documents/${id}/`,
         DOWNLOAD: (id: string) => `/api/v1/documents/${id}/download/`,

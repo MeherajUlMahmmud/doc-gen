@@ -132,10 +132,35 @@ export const NewDocumentPage: React.FC = () => {
             const fieldsData: Record<string, any> = { ...formData };
             delete fieldsData.title;
 
+            // Extract signatory assignments from signature fields
+            const signatories: Array<{
+                user_id: string;
+                signature_field_name: string;
+                signature_order: number;
+            }> = [];
+
+            // Collect signature field data
+            const signatureFields = fields.filter(f => f.type === 'signature');
+            signatureFields.forEach((field) => {
+                const userIds = formData[field.name];
+                if (userIds && Array.isArray(userIds) && userIds.length > 0) {
+                    userIds.forEach((userId, order) => {
+                        signatories.push({
+                            user_id: userId,
+                            signature_field_name: field.name,
+                            signature_order: order,
+                        });
+                    });
+                    // Remove signature field data from fields (signatories are handled separately)
+                    delete fieldsData[field.name];
+                }
+            });
+
             await documentService.createDocument({
                 template_id: template.id,
                 title: title,
                 fields: fieldsData,
+                signatories: signatories.length > 0 ? signatories : undefined,
             });
 
             toast.success('Document generated successfully');
@@ -241,6 +266,7 @@ export const NewDocumentPage: React.FC = () => {
                                     signatureGroups={signatureGroups}
                                     form={form}
                                     onFieldChange={handleFieldChange}
+                                    enableSignatorySelection={true}
                                 />
                             </CardContent>
                         </Card>

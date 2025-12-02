@@ -101,12 +101,35 @@ export interface DocumentDraft {
 }
 
 /**
+ * User model for signatory selection
+ */
+export interface User {
+    id: string;
+    email: string;
+    first_name: string;
+    last_name: string;
+    full_name: string;
+    designation?: string;
+    division?: string;
+}
+
+/**
+ * Signatory assignment
+ */
+export interface SignatoryAssignment {
+    user_id: string;
+    signature_field_name: string;
+    signature_order: number;
+}
+
+/**
  * Create document request
  */
 export interface CreateDocumentRequest {
     template_id: string;
     title: string;
     fields: Record<string, any>;
+    signatories?: SignatoryAssignment[];
 }
 
 /**

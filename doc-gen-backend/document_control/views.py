@@ -3,6 +3,7 @@ import logging
 from django.db.models import Q
 from django.http import FileResponse
 from django.utils import timezone
+from django.contrib.auth import get_user_model
 from rest_framework import status
 from rest_framework.response import Response
 
@@ -13,8 +14,10 @@ from .models import GeneratedDocumentModel, DocumentSignatoryModel, TemplateMode
 from .serializers.document_signatory import DocumentSignatoryModelSerializer
 from .serializers.generated_document import GeneratedDocumentModelSerializer
 from .serializers.template import TemplateModelSerializer
+from user_control.serializers.user import UserModelSerializer
 
 logger = logging.getLogger(__name__)
+User = get_user_model()
 
 
 class PendingSignaturesAPIView(CustomWOPListAPIView):
@@ -350,6 +353,96 @@ class TemplateUploadAPIView(CustomCreateAPIView):
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+class DocumentCreateAPIView(CustomCreateAPIView):
+    """
+    Create a new document from template with signatory assignments
+    Expects JSON: {
+        "name": "Document title",
+        "template": "template_id",
+        "input_data": {...},
+        "export_format": "docx",  // optional
+        "signatories": [  // optional
+            {
+                "user_id": "uuid",
+                "signature_field_name": "requester_1",
+                "signature_order": 0
+            },
+            ...
+        ]
+    }
+    """
+    serializer_class = GeneratedDocumentModelSerializer.Create
+
+    def post(self, request, *args, **kwargs):
+        # Validate document data using serializer
+        serializer = self.get_serializer(data=request.data)
+        if not serializer.is_valid():
+            return Response({
+                'status': 'error',
+                'message': 'Validation failed',
+                'errors': serializer.errors
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            # Create document
+            document = serializer.save(user=request.user)
+
+            # Process signatory assignments if provided
+            signatories_data = request.data.get('signatories', [])
+            if signatories_data:
+                signatory_objects = []
+                for sig_data in signatories_data:
+                    user_id = sig_data.get('user_id')
+                    signature_field_name = sig_data.get('signature_field_name')
+                    signature_order = sig_data.get('signature_order', 0)
+
+                    # Validate user exists
+                    try:
+                        signatory_user = User.objects.get(id=user_id)
+                    except User.DoesNotExist:
+                        continue
+
+                    # Create signatory assignment
+                    signatory_obj = DocumentSignatoryModel(
+                        document=document,
+                        signatory=signatory_user,
+                        signature_field_name=signature_field_name,
+                        signature_order=signature_order,
+                        status='pending'
+                    )
+                    signatory_objects.append(signatory_obj)
+
+                # Bulk create signatory assignments
+                if signatory_objects:
+                    DocumentSignatoryModel.objects.bulk_create(signatory_objects)
+
+                    # Update document counts
+                    document.signatories_count = len(signatory_objects)
+                    document.status = 'pending_approval'
+                    document.save()
+
+                    logger.info(f"Document {document.id} created with {len(signatory_objects)} signatories")
+
+            # Return document details
+            output_serializer = GeneratedDocumentModelSerializer.Detail(
+                document,
+                context={'request': request}
+            )
+
+            return Response({
+                'status': 'success',
+                'message': 'Document created successfully',
+                'data': output_serializer.data
+            }, status=status.HTTP_201_CREATED)
+
+        except Exception as e:
+            logger.error(f"Error creating document: {str(e)}")
+            return Response({
+                'status': 'error',
+                'message': f'Failed to create document: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
 class DocumentsListAPIView(CustomListAPIView):
     """
     Get all documents for the authenticated user with pagination and filtering
@@ -444,6 +537,144 @@ class DocumentDeleteAPIView(CustomDestroyAPIView):
         }, status=status.HTTP_200_OK)
 
 
+class TemplateDownloadAPIView(CustomRetrieveAPIView):
+    """
+    Download a template file
+    """
+    queryset = TemplateModel.objects.filter(is_active=True)
+    lookup_field = 'pk'
+    lookup_url_kwarg = 'pk'
+
+    def retrieve(self, request, *args, **kwargs):
+        template = self.get_object()
+
+        if not template.file:
+            return Response({
+                'status': 'error',
+                'message': 'Template file not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        # Return the file as a download
+        response = FileResponse(
+            template.file.open('rb'),
+            content_type='application/octet-stream'
+        )
+        response['Content-Disposition'] = f'attachment; filename="{template.file.name}"'
+
+        return response
+
+
+class TemplatePreviewAPIView(CustomCreateAPIView):
+    """
+    Generate a preview of the template with filled data
+    POST /api/v1/templates/<uuid:pk>/preview/
+    Body: { "fields": { "field_name": "value", ... } }
+    Returns: HTML preview of the document
+    """
+    queryset = TemplateModel.objects.filter(is_active=True)
+    lookup_field = 'pk'
+    lookup_url_kwarg = 'pk'
+
+    def get_object(self):
+        """Get the template object from the URL parameter"""
+        pk = self.kwargs.get(self.lookup_url_kwarg)
+        return self.queryset.get(pk=pk)
+
+    def post(self, request, *args, **kwargs):
+        template = self.get_object()
+
+        if not template.file:
+            return Response({
+                'status': 'error',
+                'message': 'Template file not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        try:
+            from .services import DocumentGenerator
+            from docx import Document
+            import tempfile
+            import os
+
+            # Get the fields data from request
+            fields_data = request.data.get('fields', {})
+
+            # Generate document with the provided data
+            generator = DocumentGenerator(template.file.path, fields_data)
+            doc_bytes = generator.generate()
+
+            # Save to a temporary file
+            with tempfile.NamedTemporaryFile(suffix='.docx', delete=False) as tmp_file:
+                tmp_file.write(doc_bytes.getvalue())
+                tmp_path = tmp_file.name
+
+            try:
+                # Convert to HTML for preview
+                doc = Document(tmp_path)
+                html_content = self._convert_to_html(doc)
+
+                return Response({
+                    'status': 'success',
+                    'message': 'Preview generated successfully',
+                    'data': {
+                        'html': html_content,
+                        'fields': fields_data
+                    }
+                }, status=status.HTTP_200_OK)
+            finally:
+                # Clean up temporary file
+                if os.path.exists(tmp_path):
+                    os.unlink(tmp_path)
+
+        except Exception as e:
+            logger.error(f"Error generating preview for template {template.id}: {str(e)}")
+            return Response({
+                'status': 'error',
+                'message': f'Failed to generate preview: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    def _convert_to_html(self, doc):
+        """Convert docx document to HTML"""
+        html_parts = ['<div class="document-preview" style="font-family: Arial, sans-serif; line-height: 1.6; padding: 20px; max-width: 800px; margin: 0 auto;">']
+
+        for paragraph in doc.paragraphs:
+            if paragraph.text.strip():
+                # Determine paragraph style
+                style_attrs = []
+                if paragraph.style.name.startswith('Heading'):
+                    html_parts.append(f'<h3 style="margin-top: 1em; margin-bottom: 0.5em; font-weight: bold;">{self._escape_html(paragraph.text)}</h3>')
+                else:
+                    # Check for bold/italic runs
+                    if any(run.bold for run in paragraph.runs):
+                        html_parts.append(f'<p style="margin: 0.5em 0;"><strong>{self._escape_html(paragraph.text)}</strong></p>')
+                    elif any(run.italic for run in paragraph.runs):
+                        html_parts.append(f'<p style="margin: 0.5em 0;"><em>{self._escape_html(paragraph.text)}</em></p>')
+                    else:
+                        html_parts.append(f'<p style="margin: 0.5em 0;">{self._escape_html(paragraph.text)}</p>')
+
+        # Handle tables
+        for table in doc.tables:
+            html_parts.append('<table style="width: 100%; border-collapse: collapse; margin: 1em 0;">')
+            for row in table.rows:
+                html_parts.append('<tr>')
+                for cell in row.cells:
+                    cell_text = ' '.join([p.text for p in cell.paragraphs if p.text.strip()])
+                    html_parts.append(f'<td style="border: 1px solid #ddd; padding: 8px;">{self._escape_html(cell_text)}</td>')
+                html_parts.append('</tr>')
+            html_parts.append('</table>')
+
+        html_parts.append('</div>')
+        return ''.join(html_parts)
+
+    def _escape_html(self, text):
+        """Escape HTML special characters"""
+        return (text
+                .replace('&', '&amp;')
+                .replace('<', '&lt;')
+                .replace('>', '&gt;')
+                .replace('"', '&quot;')
+                .replace("'", '&#39;'))
+
+
 class DocumentDownloadAPIView(CustomRetrieveAPIView):
     """
     Download a document file
@@ -472,3 +703,55 @@ class DocumentDownloadAPIView(CustomRetrieveAPIView):
         response['Content-Disposition'] = f'attachment; filename="{document.generated_file.name}"'
 
         return response
+
+
+class UsersListAPIView(CustomListAPIView):
+    """
+    Get all active users for signatory selection
+    Query params:
+    - search: Search in name and email
+    - division: Filter by division
+    - designation: Filter by designation
+    """
+    serializer_class = UserModelSerializer.Lite
+
+    def get_queryset(self):
+        """Build query with search and filters"""
+        queryset = User.objects.filter(
+            is_active=True,
+            is_verified=True
+        ).order_by('first_name', 'last_name')
+
+        # Get query parameters
+        search = self.request.GET.get('search', '').strip()
+        division = self.request.GET.get('division', '').strip()
+        designation = self.request.GET.get('designation', '').strip()
+
+        # Apply division filter
+        if division:
+            queryset = queryset.filter(division__icontains=division)
+
+        # Apply designation filter
+        if designation:
+            queryset = queryset.filter(designation__icontains=designation)
+
+        # Apply search filter
+        if search:
+            queryset = queryset.filter(
+                Q(first_name__icontains=search) |
+                Q(last_name__icontains=search) |
+                Q(email__icontains=search)
+            )
+
+        return queryset
+
+    def list(self, request, *args, **kwargs):
+        """Return list of users without pagination"""
+        queryset = self.get_queryset()
+        serializer = self.get_serializer(queryset, many=True)
+
+        return Response({
+            'status': 'success',
+            'message': 'Users retrieved successfully',
+            'data': serializer.data
+        }, status=status.HTTP_200_OK)

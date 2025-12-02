@@ -12,6 +12,7 @@ interface DocumentFormProps {
     signatureGroups: SignatureGroup[];
     onFieldChange?: (fieldName: string, value: any) => void;
     form: ReturnType<typeof useForm>;
+    enableSignatorySelection?: boolean;
 }
 
 export const DocumentForm: React.FC<DocumentFormProps> = ({
@@ -19,6 +20,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
     signatureGroups,
     onFieldChange,
     form,
+    enableSignatorySelection = false,
 }) => {
     const { user } = useAuth();
 
@@ -101,6 +103,8 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
                                                 key={field.name}
                                                 field={field}
                                                 control={form.control}
+                                                onChange={(value) => onFieldChange?.(field.name, value)}
+                                                enableSignatorySelection={enableSignatorySelection}
                                             />
                                         ))}
                                     </CardContent>
@@ -131,6 +135,8 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
                                         key={field.name}
                                         field={field}
                                         control={form.control}
+                                        onChange={(value) => onFieldChange?.(field.name, value)}
+                                        enableSignatorySelection={enableSignatorySelection}
                                     />
                                 ))}
                         </div>
